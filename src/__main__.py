@@ -1,78 +1,66 @@
 import asyncio
 
+import click
 from graph import Graph
 from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 
 
-async def main():
-    print("Python Graph Tutorial\n")
-
-    graph: Graph = Graph()
-
-    await greet_user(graph)
-
-    choice = -1
-
-    while choice != 0:
-        print("Please choose one of the following options:")
-        print("0. Exit")
-        print("1. Display access token")
-        print("2. List my inbox")
-
-        try:
-            choice = int(input())
-        except ValueError:
-            choice = -1
-
-        try:
-            if choice == 0:
-                print("Goodbye...")
-            elif choice == 1:
-                await display_access_token(graph)
-            elif choice == 2:
-                await list_inbox(graph)
-            else:
-                print("Invalid choice!\n")
-        except ODataError as odata_error:
-            print("Error:")
-            if odata_error.error:
-                print(odata_error.error.code, odata_error.error.message)
+@click.group()
+def cli():
+    """Microsoft Graph API CLI for Outlook/Office 365"""
+    pass
 
 
-async def greet_user(graph: Graph):
-    user = await graph.get_user()
-    if user:
-        print('Hello,', user.display_name)
-        # For Work/school accounts, email is in mail property
-        # Personal accounts, email is in userPrincipalName
-        print('Email:', user.mail or user.user_principal_name, '\n')
+@cli.command()
+def user():
+    """Display current user information"""
+    try:
+        graph = Graph()
+        user_info = asyncio.run(graph.get_user())
+        if user_info:
+            click.echo(f'Hello, {user_info.display_name}')
+            # For Work/school accounts, email is in mail property
+            # Personal accounts, email is in userPrincipalName
+            click.echo(f'Email: {user_info.mail or user_info.user_principal_name}')
+    except ODataError as e:
+        click.echo(f"Error: {e.error.code if e.error else 'Unknown'} - {e.error.message if e.error else ''}", err=True)
 
 
-async def display_access_token(graph: Graph):
-    token = await graph.get_user_token()
-    print("User token:", token, "\n")
+@cli.command()
+def token():
+    """Display access token"""
+    try:
+        graph = Graph()
+        access_token = asyncio.run(graph.get_user_token())
+        click.echo(f"User token: {access_token}")
+    except ODataError as e:
+        click.echo(f"Error: {e.error.code if e.error else 'Unknown'} - {e.error.message if e.error else ''}", err=True)
 
 
-async def list_inbox(graph: Graph):
-    message_page = await graph.get_inbox()
-    if message_page and message_page.value:
-        # Output each message's details
-        for message in message_page.value:
-            print('Message:', message.subject)
-            if (
-                message.from_ and
-                message.from_.email_address
-            ):
-                print('  From:', message.from_.email_address.name or 'NONE')
-            else:
-                print('  From: NONE')
-            print('  Status:', 'Read' if message.is_read else 'Unread')
-            print('  Received:', message.received_date_time)
+@cli.command()
+def inbox():
+    """List inbox messages"""
+    try:
+        graph = Graph()
+        message_page = asyncio.run(graph.get_inbox())
+        if message_page and message_page.value:
+            # Output each message's details
+            for message in message_page.value:
+                click.echo(f'Message: {message.subject}')
+                if message.from_ and message.from_.email_address:
+                    click.echo(f'  From: {message.from_.email_address.name or "NONE"}')
+                else:
+                    click.echo('  From: NONE')
+                click.echo(f'  Status: {"Read" if message.is_read else "Unread"}')
+                click.echo(f'  Received: {message.received_date_time}')
+                click.echo()
 
-        # If @odata.nextLink is present
-        more_available = message_page.odata_next_link is not None
-        print('\nMore messages available?', more_available, '\n')
+            # If @odata.nextLink is present
+            more_available = message_page.odata_next_link is not None
+            click.echo(f'More messages available? {more_available}')
+    except ODataError as e:
+        click.echo(f"Error: {e.error.code if e.error else 'Unknown'} - {e.error.message if e.error else ''}", err=True)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    cli()
