@@ -1,0 +1,16 @@
+[project]
+requires-python = ">= 3.13"
+
+[tool.pyright]
+reportMissingTypeStubs = false
+typeCheckingMode = "strict"
+
+[tool.ruff]
+fix = true
+
+[tool.ruff.format]
+line-ending = "lf"
+
+[tool.ruff.lint.isort]
+default-section = "first-party"
+known-third-party = ["azure", "configparser", "msgraph", "requests"]
