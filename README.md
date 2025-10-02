@@ -297,7 +297,3 @@ If you're using WSL and the browser doesn't open automatically, manually navigat
 - **Decorator Pattern**: The `Client.decorator` wraps action functions to automatically handle Graph client initialization and context management
 - **Async/Await**: All Graph API operations use async/await for efficient I/O
 - **AsyncGroup**: Custom Click group class that provides `async_command()` decorator to seamlessly integrate async functions with Click CLI
-
-## License
-
-See LICENSE file for details.
