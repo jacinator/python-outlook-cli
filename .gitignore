@@ -218,3 +218,6 @@ __marimo__/
 # Azure authentication cache
 .auth.json
 .auth_record.json
+
+# Local claude configuration, which doesn't need to be in version control.
+.claude/
