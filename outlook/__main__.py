@@ -56,10 +56,13 @@ async def folders() -> None:
 @cli.async_command()
 @click.argument("folder_id", default="inbox")
 @click.option("--top", "-t", default=100, help="Number of messages to retrieve")
-async def list(folder_id: str, top: int) -> None:
+@click.option("--oldest-first", is_flag=True, help="Sort messages oldest first instead of newest first")
+async def list(folder_id: str, top: int, oldest_first: bool) -> None:
     """List messages in a folder"""
+
+    orderby = "ASC" if oldest_first else "DESC"
     manager = OutlookClient()
-    messages, more_available = await manager.get_messages(folder_id, top=top)
+    messages, more_available = await manager.get_messages(folder_id, top=top, orderby=(f"receivedDateTime {orderby}",))
     for message in messages:
         from_str: str = get_from_str(message.from_)
         to_str: str = get_emails_str(message.to_recipients)

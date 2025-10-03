@@ -122,8 +122,9 @@ python -m outlook user
 python -m outlook folders
 
 # List messages (pipe-delimited with full metadata)
-python -m outlook list [folder_id] [--top N]
+python -m outlook list [folder_id] [--top N] [--oldest-first]
 python -m outlook list inbox --top 100  # List 100 messages from inbox
+python -m outlook list inbox --oldest-first  # List oldest messages first
 
 # Read message (pipe-delimited header + body)
 python -m outlook read <message_id>

@@ -131,11 +131,11 @@ Deleted Items|AAMkAD...|parent=NONE|children=0|total=45|unread=2|hidden=false
 
 ### Listing Messages
 
-#### `list [FOLDER_ID] [--top N]`
+#### `list [FOLDER_ID] [--top N] [--oldest-first]`
 List messages from a specific folder (pipe-delimited format with full metadata).
 
 ```bash
-# List inbox (default, 100 messages)
+# List inbox (default, 100 messages, newest first)
 python -m outlook list
 
 # List specific folder
@@ -144,6 +144,10 @@ python -m outlook list AAMkAD...
 # List 50 messages
 python -m outlook list inbox --top 50
 python -m outlook list --top 50  # Short form with default inbox
+
+# List oldest messages first (useful for incremental cleanup)
+python -m outlook list inbox --oldest-first
+python -m outlook list inbox --top 50 --oldest-first
 ```
 
 Output includes (pipe-delimited):
