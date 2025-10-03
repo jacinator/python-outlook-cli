@@ -30,8 +30,8 @@ This is a Python application that interacts with Microsoft Graph API to access O
   - `folders()` - Get cached folder structure
   - `get_messages()` - Retrieve messages with filtering/sorting
   - `get_message()` - Fetch single message with full body
-  - `move_message()` - Move message to different folder
-  - `del_message()` - Soft delete message (moves to Deleted Items)
+  - `move_messages()` - Move one or more messages to different folder (parallel execution)
+  - `delete_messages()` - Soft delete one or more messages (moves to Deleted Items, parallel execution)
 
 **`outlook/clients/auth.py`** - Authentication management
 - `GraphAuthClient` - Handles Azure AD authentication
@@ -129,11 +129,13 @@ python -m outlook list inbox --oldest-first  # List oldest messages first
 # Read message (pipe-delimited header + body)
 python -m outlook read <message_id>
 
-# Move message
+# Move message(s)
 python -m outlook move <message_id> <destination_folder_id>
+python -m outlook move <message_id1> <message_id2> <message_id3> <destination_folder_id>  # Batch move
 
-# Delete message (soft delete to Deleted Items)
+# Delete message(s) (soft delete to Deleted Items)
 python -m outlook delete <message_id>
+python -m outlook delete <message_id1> <message_id2> <message_id3>  # Batch delete
 ```
 
 ## Key Design Patterns

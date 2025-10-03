@@ -184,29 +184,41 @@ id=AAMkAD...|subject=Meeting Tomorrow|from=Jane Smith <jane@example.com>|to=...|
 
 ### Moving Messages
 
-#### `move MESSAGE_ID DESTINATION_FOLDER_ID`
-Move a message to a different folder.
+#### `move MESSAGE_ID... DESTINATION_FOLDER_ID`
+Move one or more messages to a different folder. Multiple messages are processed in parallel.
 
 ```bash
+# Move single message
 python -m outlook move AAMkAD... AAMkAD...
+
+# Move multiple messages (batch operation, parallel execution)
+python -m outlook move AAMkAD123... AAMkAD456... AAMkAD789... AAMkADdest...
 ```
 
 Output:
 ```
 OK|moved|AAMkAD...|to|AAMkAD...
+OK|moved|AAMkAD...|to|AAMkAD...
+OK|moved|AAMkAD...|to|AAMkAD...
 ```
 
 ### Deleting Messages
 
-#### `delete MESSAGE_ID`
-Move a message to Deleted Items folder (soft delete).
+#### `delete MESSAGE_ID...`
+Move one or more messages to Deleted Items folder (soft delete). Multiple messages are processed in parallel.
 
 ```bash
+# Delete single message
 python -m outlook delete AAMkAD...
+
+# Delete multiple messages (batch operation, parallel execution)
+python -m outlook delete AAMkAD123... AAMkAD456... AAMkAD789...
 ```
 
 Output:
 ```
+OK|deleted|AAMkAD...
+OK|deleted|AAMkAD...
 OK|deleted|AAMkAD...
 ```
 

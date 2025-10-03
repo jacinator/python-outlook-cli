@@ -1,4 +1,4 @@
-from asyncio import Task, create_task
+from asyncio import Task, create_task, gather, Semaphore
 from dataclasses import dataclass
 from typing import Final
 
@@ -116,17 +116,23 @@ class OutlookClient:
     # messages, including retrieval, modification, and deletion. All methods
     # operate asynchronously and interact with the Microsoft Graph API.
 
-    async def del_message(self, message_id: str) -> None:
-        """Delete a message (moves to Deleted Items folder).
+    async def delete_messages(self, message_ids: tuple[str, ...]) -> None:
+        """Delete multiple messages in parallel (moves to Deleted Items folder).
 
-        Performs a soft delete by moving the message to the Deleted Items folder
-        rather than permanently removing it.
+        Performs a soft delete by moving the messages to the Deleted Items folder
+        rather than permanently removing them. Operations are executed in parallel
+        with a maximum of 4 concurrent requests to comply with API guidelines.
 
         Args:
-            message_id: The ID of the message to delete.
+            message_ids: Tuple of message IDs to delete.
         """
-        message: MessageItemRequestBuilder = self._get_message(message_id)
-        await message.delete()
+        semaphore = Semaphore(4)
+
+        async def delete_with_semaphore(message_id: str) -> None:
+            async with semaphore:
+                await self._get_message(message_id).delete()
+
+        await gather(*(delete_with_semaphore(message_id) for message_id in message_ids))
 
     async def get_message(self, message_id: str) -> Message | None:
         """Retrieve a single message by ID with full content.
@@ -182,19 +188,27 @@ class OutlookClient:
             getattr(messages, "odata_next_link", None) is not None,
         )
 
-    async def move_message(self, folder_id: str, message_id: str) -> Message | None:
-        """Move a message to a different folder.
+    async def move_messages(self, folder_id: str, message_ids: tuple[str, ...]) -> list[Message | None]:
+        """Move multiple messages to a different folder in parallel.
 
-        Relocates the specified message to the target folder, preserving all
-        message properties and content.
+        Relocates the specified messages to the target folder, preserving all
+        message properties and content. Operations are executed in parallel
+        with a maximum of 4 concurrent requests to comply with API guidelines.
 
         Args:
             folder_id: The ID of the destination folder.
-            message_id: The ID of the message to move.
+            message_ids: Tuple of message IDs to move.
 
         Returns:
-            Message | None: The moved message object with updated folder ID,
-                or None if the operation failed.
+            tuple[Message | None, ...]: Tuple of moved message objects with updated folder IDs,
+                or None for any operations that failed. Results are in the same order as input IDs.
         """
-        message: MessageItemRequestBuilder = self._get_message(message_id)
-        return await message.move.post(MovePostRequestBody(destination_id=folder_id))
+        semaphore = Semaphore(4)
+
+        async def move_with_semaphore(message_id: str) -> Message | None:
+            async with semaphore:
+                return await self._get_message(message_id).move.post(
+                    MovePostRequestBody(destination_id=folder_id)
+                )
+
+        return await gather(*(move_with_semaphore(message_id) for message_id in message_ids))

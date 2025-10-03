@@ -125,22 +125,22 @@ async def read(message_id: str) -> None:
 
 
 @cli.async_command()
-@click.argument("message_id")
+@click.argument("message_ids", nargs=-1, required=True)
 @click.argument("folder_id")
-async def move(message_id: str, folder_id: str) -> None:
-    """Move a message to a different folder"""
+async def move(message_ids: tuple[str, ...], folder_id: str) -> None:
+    """Move one or more messages to a different folder"""
     manager = OutlookClient()
-    await manager.move_message(folder_id, message_id)
-    click.echo(f"OK|moved|{message_id}|to|{folder_id}")
+    await manager.move_messages(folder_id, message_ids)
+    click.echo("\n".join(f"OK|moved|{message_id}|to|{folder_id}" for message_id in message_ids))
 
 
 @cli.async_command()
-@click.argument("message_id")
-async def delete(message_id: str) -> None:
-    """Delete a message (moves to Deleted Items)"""
+@click.argument("message_ids", nargs=-1, required=True)
+async def delete(message_ids: tuple[str, ...]) -> None:
+    """Delete one or more messages (moves to Deleted Items)"""
     manager = OutlookClient()
-    await manager.del_message(message_id)
-    click.echo(f"OK|deleted|{message_id}")
+    await manager.delete_messages(message_ids)
+    click.echo("\n".join(f"OK|deleted|{message_id}" for message_id in message_ids))
 
 
 if __name__ == "__main__":
