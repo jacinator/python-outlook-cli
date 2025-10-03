@@ -2,18 +2,16 @@ import click
 from msgraph.generated.models.o_data_errors.o_data_error import ODataError
 
 from .actions import (
-    authenticate,
-    get_folders,
     get_message,
     get_messages,
-    get_user,
     message_delete,
     message_forward,
     message_move,
-    message_move_all,
 )
 from .groups import AsyncGroup
 from .utils import get_emails_str, get_from_str
+
+from .clients import OutlookClient
 
 
 @click.group(cls=AsyncGroup)
@@ -22,59 +20,45 @@ def cli() -> None:
     pass
 
 
-@cli.async_command()
-async def user() -> None:
-    """Display current user information"""
-    try:
-        if user_info := await get_user():
-            # For Work/school accounts, email is in mail property
-            # Personal accounts, email is in userPrincipalName
-            email = user_info.mail or user_info.user_principal_name or "NONE"
-            display_name = user_info.display_name or "NONE"
-            click.echo(f"{display_name}|{email}")
-    except ODataError as e:
-        click.echo(
-            f"Error: {e.error.code if e.error else 'Unknown'} - {e.error.message if e.error else ''}",
-            err=True,
-        )
-
-
 @cli.command()
 def login() -> None:
     """Authenticate and save credentials"""
-    try:
-        authenticate()
-        click.echo("OK|authenticated")
-    except ODataError as e:
-        click.echo(
-            f"Error: {e.error.code if e.error else 'Unknown'} - {e.error.message if e.error else ''}",
-            err=True,
-        )
+    manager = OutlookClient()
+    manager.authenticate()
+    click.echo("OK|authenticated")
 
 
 @cli.async_command()
-@click.argument("folder_id", required=False)
-async def folders(folder_id: str | None) -> None:
-    """List mail folders (top-level or child folders of specified parent)"""
-    try:
-        folder_response = await get_folders(folder_id)
-        if folder_response and folder_response.value:
-            for folder in folder_response.value:
-                parts = [
+async def user() -> None:
+    """Display current user information from cached data"""
+    manager = OutlookClient()
+    user = await manager.user()
+
+    click.echo("{}|{}".format(user.name or "NONE", user.addr or "NONE"))
+
+
+@cli.async_command()
+async def folders() -> None:
+    """List all mail folders from cached data"""
+    manager = OutlookClient()
+    folders = await manager.folders()
+
+    click.echo(
+        "\n".join(
+            "|".join(
+                (
                     folder.display_name or "NONE",
                     folder.id or "NONE",
                     f"parent={folder.parent_folder_id or 'NONE'}",
-                    f"children={folder.child_folder_count if folder.child_folder_count is not None else 0}",
-                    f"total={folder.total_item_count if folder.total_item_count is not None else 0}",
-                    f"unread={folder.unread_item_count if folder.unread_item_count is not None else 0}",
-                    f"hidden={str(folder.is_hidden).lower() if folder.is_hidden is not None else 'false'}",
-                ]
-                click.echo("|".join(parts))
-    except ODataError as e:
-        click.echo(
-            f"Error: {e.error.code if e.error else 'Unknown'} - {e.error.message if e.error else ''}",
-            err=True,
+                    f"children={folder.child_folder_count or 0}",
+                    f"total={folder.total_item_count or 0}",
+                    f"unread={folder.unread_item_count or 0}",
+                    f"hidden={str(folder.is_hidden).lower() or 'false'}",
+                )
+            )
+            for folder in folders.values()
         )
+    )
 
 
 @cli.async_command()
@@ -166,21 +150,6 @@ async def move(message_id: str, destination_folder_id: str) -> None:
     try:
         await message_move(message_id, destination_folder_id)
         click.echo(f"OK|moved|{message_id}|to|{destination_folder_id}")
-    except ODataError as e:
-        click.echo(
-            f"Error: {e.error.code if e.error else 'Unknown'} - {e.error.message if e.error else ''}",
-            err=True,
-        )
-
-
-@cli.async_command()
-@click.argument("source_folder_id")
-@click.argument("destination_folder_id")
-async def moveall(source_folder_id: str, destination_folder_id: str) -> None:
-    """Move all messages from source folder to destination folder"""
-    try:
-        count = await message_move_all(source_folder_id, destination_folder_id)
-        click.echo(f"OK|moved|count={count}|from|{source_folder_id}|to|{destination_folder_id}")
     except ODataError as e:
         click.echo(
             f"Error: {e.error.code if e.error else 'Unknown'} - {e.error.message if e.error else ''}",
