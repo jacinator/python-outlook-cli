@@ -1,11 +1,21 @@
 from asyncio import Task, create_task
 from dataclasses import dataclass
+from typing import Final
 
 from msgraph.graph_service_client import GraphServiceClient
+from msgraph.generated.models.message import Message
+from msgraph.generated.models.message_collection_response import MessageCollectionResponse
+from msgraph.generated.users.item.mail_folders.item.messages.messages_request_builder import MessagesRequestBuilder
+from msgraph.generated.users.item.mail_folders.item.mail_folder_item_request_builder import MailFolderItemRequestBuilder
+from msgraph.generated.users.item.messages.item.message_item_request_builder import MessageItemRequestBuilder
+from msgraph.generated.users.item.messages.item.move.move_post_request_body import MovePostRequestBody
 
 from .auth import GraphAuthClient
 from .folders import Folders
 from .users import User
+
+DEFAULT_ORDERBY: Final[tuple[str, ...]] = ("receivedDateTime DESC",)
+DEFAULT_SELECT: Final[tuple[str, ...]] = ("id", "subject", "from", "toRecipients", "ccRecipients", "isRead", "receivedDateTime", "sentDateTime", "hasAttachments", "importance", "conversationId", "parentFolderId", "webLink", "bodyPreview")
 
 
 @dataclass(slots=True)
@@ -21,11 +31,15 @@ class OutlookClient:
     """
 
     auth: GraphAuthClient
+    client: GraphServiceClient
+
     _folders_task: Task[Folders]
     _user_task: Task[User]
 
     def __init__(self) -> None:
         self.auth = GraphAuthClient()
+        self.client = self.auth.client
+
         self._folders_task = create_task(Folders.create(self.client))
         self._user_task = create_task(User.create(self.client))
 
@@ -37,14 +51,150 @@ class OutlookClient:
         """
         self.auth.auth = self.auth.credentials.authenticate(scopes=self.auth.config.scopes)
 
+    # =========================================================================
+    # Cached Data Access Methods
+    # =========================================================================
+    # These methods provide access to user and folder data that is loaded
+    # asynchronously in the background when OutlookClient is instantiated.
+    # This approach improves performance by parallelizing data fetching rather
+    # than blocking on each request sequentially.
+
     async def folders(self) -> Folders:
-        """Get folders data, waiting for background load if needed."""
+        """Get all mail folders for the authenticated user.
+
+        Returns cached folder data loaded in the background during initialization.
+        If the background task hasn't completed, this will wait for it.
+
+        Returns:
+            Folders: Dictionary-like collection of mail folders keyed by folder ID.
+        """
         return await self._folders_task
 
     async def user(self) -> User:
-        """Get user data, waiting for background load if needed."""
+        """Get profile information for the authenticated user.
+
+        Returns cached user data loaded in the background during initialization.
+        If the background task hasn't completed, this will wait for it.
+
+        Returns:
+            User: User profile containing name, email, and other account details.
+        """
         return await self._user_task
 
-    @property
-    def client(self) -> GraphServiceClient:
-        return self.auth.client
+    # =========================================================================
+    # Internal Helper Methods
+    # =========================================================================
+    # These private methods provide typed request builders for Graph API
+    # resources, reducing code duplication across public methods.
+
+    def _get_folder(self, folder_id: str) -> MailFolderItemRequestBuilder:
+        """Get a request builder for a specific mail folder.
+
+        Args:
+            folder_id: The ID of the mail folder to access.
+
+        Returns:
+            MailFolderItemRequestBuilder: Builder for performing operations on the folder.
+        """
+        return self.client.me.mail_folders.by_mail_folder_id(folder_id)
+
+    def _get_message(self, message_id: str) -> MessageItemRequestBuilder:
+        """Get a request builder for a specific message.
+
+        Args:
+            message_id: The ID of the message to access.
+
+        Returns:
+            MessageItemRequestBuilder: Builder for performing operations on the message.
+        """
+        return self.client.me.messages.by_message_id(message_id)
+
+    # =========================================================================
+    # Message Operations
+    # =========================================================================
+    # These methods provide high-level operations for working with email
+    # messages, including retrieval, modification, and deletion. All methods
+    # operate asynchronously and interact with the Microsoft Graph API.
+
+    async def del_message(self, message_id: str) -> None:
+        """Delete a message (moves to Deleted Items folder).
+
+        Performs a soft delete by moving the message to the Deleted Items folder
+        rather than permanently removing it.
+
+        Args:
+            message_id: The ID of the message to delete.
+        """
+        message: MessageItemRequestBuilder = self._get_message(message_id)
+        await message.delete()
+
+    async def get_message(self, message_id: str) -> Message | None:
+        """Retrieve a single message by ID with full content.
+
+        Fetches complete message details including headers, body content,
+        recipients, and metadata.
+
+        Args:
+            message_id: The ID of the message to retrieve.
+
+        Returns:
+            Message | None: The message object if found, None otherwise.
+        """
+        message: MessageItemRequestBuilder = self._get_message(message_id)
+        return await message.get()
+
+    async def get_messages(
+        self,
+        folder_id: str,
+        *,
+        orderby: tuple[str, ...] = DEFAULT_ORDERBY,
+        select: tuple[str, ...] = DEFAULT_SELECT,
+        top: int | None = None,
+    ) -> tuple[list[Message], bool]:
+        """Retrieve messages from a specific folder with filtering options.
+
+        Fetches a list of messages from the specified folder with customizable
+        sorting, field selection, and result limiting.
+
+        Args:
+            folder_id: The ID of the folder to retrieve messages from.
+            orderby: Tuple of OData orderby clauses (e.g., "receivedDateTime DESC").
+                Defaults to sorting by received date descending.
+            select: Tuple of field names to include in results. Defaults to
+                common fields like id, subject, from, recipients, dates, etc.
+            top: Maximum number of messages to return. None for default limit.
+
+        Returns:
+            tuple[list[Message], bool]: A tuple containing:
+                - List of message objects matching the query (empty list if none found)
+                - Boolean indicating if more messages are available (True if pagination link exists)
+        """
+        folder: MailFolderItemRequestBuilder = self._get_folder(folder_id)
+        messages: MessageCollectionResponse | None = await folder.messages.get(
+            MessagesRequestBuilder.MessagesRequestBuilderGetRequestConfiguration(
+                query_parameters=MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
+                    orderby=list(orderby), select=list(select), top=top
+                )
+            )
+        )
+        return (
+            messages.value if messages and messages.value else [],
+            getattr(messages, "odata_next_link", None) is not None,
+        )
+
+    async def move_message(self, folder_id: str, message_id: str) -> Message | None:
+        """Move a message to a different folder.
+
+        Relocates the specified message to the target folder, preserving all
+        message properties and content.
+
+        Args:
+            folder_id: The ID of the destination folder.
+            message_id: The ID of the message to move.
+
+        Returns:
+            Message | None: The moved message object with updated folder ID,
+                or None if the operation failed.
+        """
+        message: MessageItemRequestBuilder = self._get_message(message_id)
+        return await message.move.post(MovePostRequestBody(destination_id=folder_id))
