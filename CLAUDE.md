@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This is a Python application that interacts with Microsoft Graph API to access Outlook/Office 365 data. It provides a command-line interface for authenticating with Azure AD and performing operations on a user's mailbox including reading, moving, deleting, and forwarding emails.
+This is a Python application that interacts with Microsoft Graph API to access Outlook/Office 365 data. It provides a command-line interface for authenticating with Azure AD and performing operations on a user's mailbox including reading, moving, and deleting emails. The CLI uses pipe-delimited output format for easy integration with scripts and AI tools.
 
 ## Architecture
 
@@ -12,46 +12,63 @@ This is a Python application that interacts with Microsoft Graph API to access O
 - CLI using Click with AsyncGroup for async command support
 - Implements async/await pattern throughout
 - Handles OData errors from Graph API
-- Commands: login, user, folders, list, read, move, delete, forward
+- Commands: login, user, folders, list, read, move, delete
+- Output format: Pipe-delimited for AI/script-friendly parsing
 
 **`outlook/groups.py`** - AsyncGroup class
 - Custom Click Group that provides `async_command()` decorator
 - Automatically wraps async functions with `asyncio.run()`
 - Seamlessly integrates async/await with Click's command system
 
-**`outlook/actions/__init__.py`** - Action functions
-- Pure async functions for Graph API operations
-- Decorated with `@Client.decorator` for automatic client management
-- Functions:
-  - `authenticate()` - Authenticate and save credentials
-  - `get_user()` - Fetches user profile
-  - `get_folders()` - Lists all mail folders
-  - `get_messages()` - Retrieves messages from a folder with filtering/sorting
-  - `get_message()` - Fetches a single message with full body
-  - `message_move()` - Moves message to different folder
-  - `message_delete()` - Soft deletes message (moves to Deleted Items)
-  - `message_forward()` - Forwards message to recipients
-  - `folder_create()` - Creates new mail folder
+**`outlook/clients/__init__.py`** - OutlookClient class
+- Main interface for Graph API operations
+- Manages authentication via `GraphAuthClient`
+- Background loading of user and folder data for performance
+- Methods:
+  - `authenticate()` - Perform interactive browser authentication
+  - `user()` - Get cached user profile
+  - `folders()` - Get cached folder structure
+  - `get_messages()` - Retrieve messages with filtering/sorting
+  - `get_message()` - Fetch single message with full body
+  - `move_message()` - Move message to different folder
+  - `del_message()` - Soft delete message (moves to Deleted Items)
 
-**`outlook/actions/clients.py`** - Client management
-- `Client` class with context manager pattern
+**`outlook/clients/auth.py`** - Authentication management
+- `GraphAuthClient` - Handles Azure AD authentication
+- `Config` - Stores client ID, tenant ID, and scopes
+- `AuthenticationRecordDescriptor` - Descriptor for persisting auth records
 - `InteractiveBrowserCredential` with token caching and Windows Account Manager (WAM) support
-- `Client.decorator` wraps action functions to provide Graph client automatically
 - Loads configuration from `.auth.json`
 - Manages authentication records in `.auth_record.json`
 
+**`outlook/clients/folders.py`** - Folder management
+- `Folders` - Dictionary-like collection of mail folders
+- Stores full `MailFolder` objects for metadata access
+- Recursively loads nested folders
+- Excludes system folders (Drafts, Sent Items, etc.)
+
+**`outlook/clients/users.py`** - User profile management
+- `User` - Dataclass for storing user profile information
+- Caches display name and email address
+- Handles both work/school and personal account formats
+
+**`outlook/clients/settings.py`** - Configuration paths
+- Defines paths for `.auth.json` and `.auth_record.json`
+- Provides root directory reference
+
 ### Features
 
-- Silent authentication with token caching and Windows Account Manager
+- Silent authentication with token caching and Windows Account Manager (WAM)
 - Browser-based OAuth authentication (InteractiveBrowserCredential)
 - View user profile information
 - List and manage mail folders
 - List messages with filtering, sorting, and pagination
 - Read full message content including HTML/text body
 - Move messages between folders
-- Delete messages (soft delete)
-- Forward messages to multiple recipients with optional comments
+- Delete messages (soft delete to Deleted Items)
 - Async/await architecture throughout
+- Background data loading for improved performance
+- Pipe-delimited output format for AI/script integration
 - Error handling for OData errors
 
 ### Configuration Required
@@ -98,45 +115,47 @@ python -m outlook <command>
 # Authentication
 python -m outlook login
 
-# User info
+# User info (pipe-delimited: name|email)
 python -m outlook user
 
-# Mail folders
+# Mail folders (pipe-delimited with metadata)
 python -m outlook folders
 
-# List messages
-python -m outlook list [folder_id] [--limit N]
+# List messages (pipe-delimited with full metadata)
+python -m outlook list [folder_id] [--top N]
+python -m outlook list inbox --top 100  # List 100 messages from inbox
 
-# Read message
+# Read message (pipe-delimited header + body)
 python -m outlook read <message_id>
 
 # Move message
 python -m outlook move <message_id> <destination_folder_id>
 
-# Delete message
+# Delete message (soft delete to Deleted Items)
 python -m outlook delete <message_id>
-
-# Forward message
-python -m outlook forward <message_id> <recipients...> [--comment TEXT]
 ```
 
 ## Key Design Patterns
 
-### Client Decorator Pattern
+### OutlookClient with Background Loading
 
-The `Client.decorator` provides automatic Graph client management:
+The `OutlookClient` class provides a high-level interface with optimized data loading:
 
 ```python
-@Client.decorator
-async def get_user(client: GraphServiceClient) -> User | None:
-    return await client.me.get(...)
+# Client initialization starts background tasks
+manager = OutlookClient()
+
+# Data is loaded in parallel, awaited only when accessed
+user = await manager.user()  # Returns cached user data
+folders = await manager.folders()  # Returns cached folder data
+messages, more = await manager.get_messages("inbox", top=50)
 ```
 
-The decorator:
-1. Creates a `Client` instance with authentication
-2. Provides the `GraphServiceClient` as the first parameter
-3. Handles context management and cleanup
-4. Enables reusable action functions without boilerplate
+Key features:
+1. Initializes `GraphAuthClient` for authentication
+2. Starts background tasks to load user and folder data in parallel
+3. Data is awaited only when accessed, improving performance
+4. Provides typed methods for all message operations
 
 ### AsyncGroup for Click Commands
 
@@ -155,12 +174,48 @@ The `async_command()` decorator:
 3. Preserves function metadata
 4. Allows natural async/await syntax in CLI commands
 
+### Authentication Record Descriptor
+
+The `AuthenticationRecordDescriptor` manages persistent authentication:
+
+```python
+class GraphAuthClient:
+    auth: ClassVar[AuthenticationRecordDescriptor] = AuthenticationRecordDescriptor()
+```
+
+The descriptor:
+1. Automatically loads auth records from `.auth_record.json` on access
+2. Serializes and saves auth records to disk on assignment
+3. Enables deletion of auth records to force re-authentication
+4. Works seamlessly with `InteractiveBrowserCredential`
+
 ### Token Caching with WAM
 
 The `InteractiveBrowserCredential` uses:
 - **Token cache persistence** - Avoids repeated authentication
 - **Windows Account Manager (WAM)** - Native Windows integration for silent auth
-- **Authentication records** - Stored in `.auth_record.json` for session persistence
+- **Authentication records** - Stored in `.auth_record.json` for session persistence via descriptor
+
+### Pipe-Delimited Output Format
+
+All commands output pipe-delimited data for easy parsing by scripts and AI:
+
+```bash
+# User command output
+John Doe|john.doe@example.com
+
+# Folders command output
+Inbox|AAMkAD...|parent=NONE|children=5|total=342|unread=12|hidden=false
+
+# List command output
+AAMkAD...|Meeting Tomorrow|Jane Smith <jane@example.com>|to=...|cc=...|read|2025-10-01 14:26:09+00:00|...
+```
+
+This format enables:
+- Easy parsing with `split('|')`
+- Structured data extraction
+- AI-friendly processing
+- Script automation
 
 ## Dependencies
 

@@ -1,7 +1,7 @@
 import click
 
 from .groups import AsyncGroup
-from .utils import get_emails_str, get_from_str
+from .utils import get_emails_str, get_from_str, sanitize_for_output
 
 from .clients import OutlookClient
 
@@ -67,10 +67,10 @@ async def list(folder_id: str, top: int) -> None:
 
         parts = [
             message.id or "NONE",
-            message.subject or "NONE",
-            from_str,
-            f"to={to_str}",
-            f"cc={cc_str}",
+            sanitize_for_output(message.subject or "NONE"),
+            sanitize_for_output(from_str),
+            f"to={sanitize_for_output(to_str)}",
+            f"cc={sanitize_for_output(cc_str)}",
             "read" if message.is_read else "unread",
             str(message.received_date_time) if message.received_date_time else "NONE",
             f"sent={message.sent_date_time}" if message.sent_date_time else "sent=NONE",
@@ -80,7 +80,7 @@ async def list(folder_id: str, top: int) -> None:
             f"folder={message.parent_folder_id or 'NONE'}",
             f"weblink={message.web_link or 'NONE'}",
         ]
-        click.echo("|".join(parts))
+        click.echo(sanitize_for_output("|".join(parts)))
     click.echo(f"--- more={more_available} ---".lower())
 
 
@@ -97,10 +97,10 @@ async def read(message_id: str) -> None:
         # Build header parts
         header_parts = [
             f"id={message.id or 'NONE'}",
-            f"subject={message.subject or 'NONE'}",
-            f"from={from_str}",
-            f"to={to_str}",
-            f"cc={cc_str}",
+            f"subject={sanitize_for_output(message.subject or 'NONE')}",
+            f"from={sanitize_for_output(from_str)}",
+            f"to={sanitize_for_output(to_str)}",
+            f"cc={sanitize_for_output(cc_str)}",
             f"received={message.received_date_time}" if message.received_date_time else "received=NONE",
             f"sent={message.sent_date_time}" if message.sent_date_time else "sent=NONE",
             f"status={'read' if message.is_read else 'unread'}",
@@ -110,13 +110,13 @@ async def read(message_id: str) -> None:
             f"folder={message.parent_folder_id or 'NONE'}",
             f"weblink={message.web_link or 'NONE'}",
         ]
-        click.echo("|".join(header_parts))
+        click.echo(sanitize_for_output("|".join(header_parts)))
 
         # Body
         body_type = message.body.content_type.value if message.body and message.body.content_type else "text"
         click.echo(f"\n--- Body ({body_type}) ---")
         if message.body and message.body.content:
-            click.echo(message.body.content)
+            click.echo(sanitize_for_output(message.body.content))
         else:
             click.echo("(No body content)")
 

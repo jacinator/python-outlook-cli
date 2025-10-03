@@ -5,10 +5,12 @@ A command-line interface for managing Microsoft Outlook emails using the Microso
 ## Features
 
 - Silent authentication with Windows Account Manager (WAM) and token caching
-- Read, list, move, delete, and forward emails
+- Read, list, move, and delete emails
 - Manage mail folders
 - Full email body access
 - Built with async/await for efficient API calls
+- Pipe-delimited output format for easy scripting and AI integration
+- Background data loading for improved performance
 
 ## Prerequisites
 
@@ -92,10 +94,15 @@ Authenticate with your Microsoft account and save credentials.
 python -m outlook login
 ```
 
+Output:
+```
+OK|authenticated
+```
+
 ### User Information
 
 #### `user`
-Display current user information.
+Display current user information (pipe-delimited format).
 
 ```bash
 python -m outlook user
@@ -103,14 +110,13 @@ python -m outlook user
 
 Output:
 ```
-Hello, John Doe
-Email: john.doe@example.com
+John Doe|john.doe@example.com
 ```
 
 ### Managing Folders
 
 #### `folders`
-List all mail folders with their IDs.
+List all mail folders with their IDs and metadata (pipe-delimited format).
 
 ```bash
 python -m outlook folders
@@ -118,40 +124,47 @@ python -m outlook folders
 
 Output:
 ```
-Inbox: AAMkAD...
-Sent Items: AAMkAD...
-Drafts: AAMkAD...
-Deleted Items: AAMkAD...
+Inbox|AAMkAD...|parent=NONE|children=5|total=342|unread=12|hidden=false
+Archive|AAMkAD...|parent=AAMkAD...|children=0|total=128|unread=0|hidden=false
+Deleted Items|AAMkAD...|parent=NONE|children=0|total=45|unread=2|hidden=false
 ```
 
 ### Listing Messages
 
-#### `list [FOLDER_ID] [--limit N]`
-List messages from a specific folder.
+#### `list [FOLDER_ID] [--top N]`
+List messages from a specific folder (pipe-delimited format with full metadata).
 
 ```bash
-# List inbox (default)
+# List inbox (default, 100 messages)
 python -m outlook list
 
 # List specific folder
 python -m outlook list AAMkAD...
 
 # List 50 messages
-python -m outlook list inbox --limit 50
-python -m outlook list --limit 50  # Short form
+python -m outlook list inbox --top 50
+python -m outlook list --top 50  # Short form with default inbox
 ```
 
-Output includes:
+Output includes (pipe-delimited):
 - Message ID
 - Subject
-- From
+- From (name and email)
+- To recipients
+- CC recipients
 - Read/Unread status
 - Received date/time
+- Sent date/time
+- Has attachments
+- Importance level
+- Conversation ID
+- Parent folder ID
+- Web link
 
 ### Reading Messages
 
 #### `read MESSAGE_ID`
-Display full message including body content.
+Display full message including body content (pipe-delimited header + body).
 
 ```bash
 python -m outlook read AAMkAD...
@@ -159,14 +172,10 @@ python -m outlook read AAMkAD...
 
 Output:
 ```
-Subject: Meeting Tomorrow
-From: Jane Smith <jane@example.com>
-Received: 2025-10-01 14:26:09+00:00
-Status: Read
+id=AAMkAD...|subject=Meeting Tomorrow|from=Jane Smith <jane@example.com>|to=...|cc=...|received=2025-10-01 14:26:09+00:00|sent=2025-10-01 14:25:00+00:00|status=read|attachments=false|importance=normal|conversation=AAMkAD...|folder=AAMkAD...|weblink=https://...
 
---- Body ---
-Hi team,
-Let's meet tomorrow at 2pm...
+--- Body (html) ---
+<html>Hi team,<br>Let's meet tomorrow at 2pm...</html>
 ```
 
 ### Moving Messages
@@ -178,6 +187,11 @@ Move a message to a different folder.
 python -m outlook move AAMkAD... AAMkAD...
 ```
 
+Output:
+```
+OK|moved|AAMkAD...|to|AAMkAD...
+```
+
 ### Deleting Messages
 
 #### `delete MESSAGE_ID`
@@ -187,24 +201,12 @@ Move a message to Deleted Items folder (soft delete).
 python -m outlook delete AAMkAD...
 ```
 
-**Note**: This performs a soft delete (moves to Deleted Items). Permanent deletion is not available via the CLI.
-
-### Forwarding Messages
-
-#### `forward MESSAGE_ID RECIPIENT [RECIPIENT...] [--comment TEXT]`
-Forward a message to one or more recipients.
-
-```bash
-# Forward to one recipient
-python -m outlook forward AAMkAD... john@example.com
-
-# Forward to multiple recipients
-python -m outlook forward AAMkAD... john@example.com jane@example.com
-
-# Forward with comment
-python -m outlook forward AAMkAD... john@example.com --comment "FYI"
-python -m outlook forward AAMkAD... john@example.com -c "Please review"
+Output:
 ```
+OK|deleted|AAMkAD...
+```
+
+**Note**: This performs a soft delete (moves to Deleted Items). Permanent deletion is not available via the CLI.
 
 ## Configuration Files
 
@@ -247,7 +249,7 @@ python -m outlook <command>
 ./venv/bin/python -m outlook <command>
 
 # Windows
-venv\Scripts\python.exe -m src <command>
+venv\Scripts\python.exe -m outlook <command>
 ```
 
 ## Troubleshooting
@@ -285,15 +287,20 @@ If you're using WSL and the browser doesn't open automatically, manually navigat
 
 ## Architecture
 
-- **`outlook/__main__.py`**: CLI commands using Click with async support
+- **`outlook/__main__.py`**: CLI commands using Click with async support and pipe-delimited output
 - **`outlook/groups.py`**: AsyncGroup class for handling async Click commands
-- **`outlook/actions/__init__.py`**: Action functions for Microsoft Graph API operations
-- **`outlook/actions/clients.py`**: Client class with decorator pattern for authentication and Graph API client management
+- **`outlook/clients/__init__.py`**: OutlookClient class - main interface for Graph API operations
+- **`outlook/clients/auth.py`**: GraphAuthClient for Azure AD authentication with descriptor pattern
+- **`outlook/clients/folders.py`**: Folders class - dictionary-like collection of mail folders
+- **`outlook/clients/users.py`**: User dataclass for caching user profile information
+- **`outlook/clients/settings.py`**: Configuration file path definitions
 - **`.auth.json`**: Azure AD app configuration (user-created)
 - **`.auth_record.json`**: Cached authentication record (auto-generated)
 
 ### Key Design Patterns
 
-- **Decorator Pattern**: The `Client.decorator` wraps action functions to automatically handle Graph client initialization and context management
+- **Background Loading**: OutlookClient starts background tasks to load user and folder data in parallel for improved performance
+- **Descriptor Pattern**: AuthenticationRecordDescriptor manages persistent authentication records with automatic serialization/deserialization
 - **Async/Await**: All Graph API operations use async/await for efficient I/O
 - **AsyncGroup**: Custom Click group class that provides `async_command()` decorator to seamlessly integrate async functions with Click CLI
+- **Pipe-Delimited Output**: All commands output structured data in pipe-delimited format for easy parsing and integration

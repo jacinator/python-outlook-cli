@@ -1,4 +1,12 @@
+import sys
+
 from msgraph.generated.models.recipient import Recipient
+
+
+def sanitize_for_output(text: str) -> str:
+    """Sanitize text for console output by handling Unicode encoding issues"""
+    encoding = getattr(sys.stdout, "encoding", "utf-8") or "utf-8"
+    return text.encode(encoding, errors="replace").decode(encoding)
 
 
 def get_emails(recipients: list[Recipient] | None) -> list[str]:
