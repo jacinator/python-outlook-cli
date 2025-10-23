@@ -1,11 +1,16 @@
-import click
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+from typing import Final
+
+import click
 
 from .groups import AsyncGroup
 from .utils import get_emails_str, get_from_str, sanitize_for_output
 
 from .clients import OutlookClient
+from .purge import purge_worker
+
+TORONTO: Final[ZoneInfo] = ZoneInfo("America/Toronto")
 
 
 @click.group(cls=AsyncGroup)
@@ -71,8 +76,7 @@ async def list(folder_id: str, top: int, oldest_first: bool, today: bool, yester
     # Build date filter if needed
     filter_expr: str | None = None
     if today or yesterday:
-        toronto_tz = ZoneInfo("America/Toronto")
-        now_toronto = datetime.now(toronto_tz)
+        now_toronto = datetime.now(TORONTO)
         today_start = now_toronto.replace(hour=0, minute=0, second=0, microsecond=0)
 
         if today:
@@ -166,6 +170,34 @@ async def delete(message_ids: tuple[str, ...]) -> None:
     manager = OutlookClient()
     await manager.delete_messages(message_ids)
     click.echo("\n".join(f"OK|deleted|{message_id}" for message_id in message_ids))
+
+
+@cli.command()
+@click.argument("folder_id", default="inbox")
+@click.option("--dry-run", is_flag=True, help="Show what would be deleted without actually deleting")
+@click.option("--batch-size", default=50, help="Number of emails to process in each batch")
+@click.option("--before-date", default="2024-01-01", help="Delete emails received before this date (YYYY-MM-DD)")
+def purge(folder_id: str, dry_run: bool, batch_size: int, before_date: str) -> None:
+    """Delete old emails from a folder in batches"""
+
+    # Parse and validate the date
+    try:
+        cutoff_date = datetime.fromisoformat(before_date)
+        if cutoff_date.tzinfo is None:
+            cutoff_date = cutoff_date.replace(tzinfo=TORONTO)
+    except ValueError:
+        click.echo(f"ERROR: Invalid date format '{before_date}'. Use YYYY-MM-DD")
+        return
+
+    # Print header
+    mode = "DRY-RUN: " if dry_run else ""
+    click.echo(f"{mode}Purging emails from folder '{folder_id}' before {before_date}")
+    click.echo(f"Batch size: {batch_size}")
+    click.echo("Type 'QUIT' (case-insensitive) and press Enter to finish current batch and exit")
+    click.echo("-" * 60)
+
+    # Call the purge worker (handles threading internally)
+    purge_worker(folder_id, batch_size=batch_size, before_date=cutoff_date, dry_run=dry_run)
 
 
 if __name__ == "__main__":
