@@ -6,6 +6,7 @@ A command-line interface for managing Microsoft Outlook emails using the Microso
 
 - Silent authentication with Windows Account Manager (WAM) and token caching
 - Read, list, move, and delete emails
+- Bulk purge old emails with interactive cancellation
 - Manage mail folders
 - Full email body access
 - Built with async/await for efficient API calls
@@ -224,6 +225,60 @@ OK|deleted|AAMkAD...
 
 **Note**: This performs a soft delete (moves to Deleted Items). Permanent deletion is not available via the CLI.
 
+### Purging Old Emails
+
+#### `purge [FOLDER_ID] [--dry-run] [--batch-size N] [--before-date YYYY-MM-DD]`
+Bulk delete old emails in batches with interactive control. Processes emails in the background while allowing you to monitor progress and cancel gracefully.
+
+**Options:**
+- `FOLDER_ID`: Folder to purge (default: `inbox`)
+- `--dry-run`: Show what would be deleted without actually deleting
+- `--batch-size N`: Number of emails to process in each batch (default: 50)
+- `--before-date YYYY-MM-DD`: Delete emails received before this date (default: 2024-01-01)
+
+**Interactive Control:**
+- Type `QUIT` (case-insensitive) and press Enter to finish the current batch and exit gracefully
+- Or press Ctrl+C for immediate exit
+
+```bash
+# Dry run to see what would be deleted (recommended first step)
+python -m outlook purge --dry-run
+
+# Dry run with custom batch size
+python -m outlook purge inbox --dry-run --batch-size 25
+
+# Delete emails from inbox older than Jan 1, 2023
+python -m outlook purge inbox --before-date 2023-01-01
+
+# Delete old emails from specific folder
+python -m outlook purge AAMkAD... --before-date 2022-01-01 --batch-size 100
+
+# Full example with all options
+python -m outlook purge inbox --dry-run --batch-size 50 --before-date 2023-06-01
+```
+
+Output:
+```
+DRY-RUN: Purging emails from folder 'inbox' before 2024-01-01
+Batch size: 50
+Type 'QUIT' (case-insensitive) and press Enter to finish current batch and exit
+------------------------------------------------------------
+>>>: DRY-RUN|AAMkAD...|Subject Line|2020-08-12 21:42:01+00:00
+DRY-RUN|AAMkAD...|Another Email|2020-08-13 11:00:07+00:00
+...
+PROGRESS|1|total=50|batch=50
+>>>: QUIT
+User requested quit. Finishing current batch...
+RESULT|DRY-RUN|total=50|folder_id='inbox'|before_date=datetime(2024, 1, 1, 0, 0, tzinfo=ZoneInfo('America/Toronto'))
+```
+
+**Important Notes:**
+- Always run with `--dry-run` first to preview what will be deleted
+- The purge runs in batches - you can stop at any time by typing `QUIT`
+- Deleted emails are moved to Deleted Items folder (soft delete)
+- Dates are interpreted in America/Toronto timezone
+- Progress is reported after each batch with `PROGRESS|counter|total|batch` format
+
 ## Configuration Files
 
 ### `.auth.json` (Required - You Create)
@@ -305,6 +360,7 @@ If you're using WSL and the browser doesn't open automatically, manually navigat
 
 - **`outlook/__main__.py`**: CLI commands using Click with async support and pipe-delimited output
 - **`outlook/groups.py`**: AsyncGroup class for handling async Click commands
+- **`outlook/purge.py`**: Bulk email purge functionality with background processing and interactive cancellation
 - **`outlook/clients/__init__.py`**: OutlookClient class - main interface for Graph API operations
 - **`outlook/clients/auth.py`**: GraphAuthClient for Azure AD authentication with descriptor pattern
 - **`outlook/clients/folders.py`**: Folders class - dictionary-like collection of mail folders

@@ -12,7 +12,7 @@ This is a Python application that interacts with Microsoft Graph API to access O
 - CLI using Click with AsyncGroup for async command support
 - Implements async/await pattern throughout
 - Handles OData errors from Graph API
-- Commands: login, user, folders, list, read, move, delete
+- Commands: login, user, folders, list, read, move, delete, purge
 - Output format: Pipe-delimited for AI/script-friendly parsing
 
 **`outlook/groups.py`** - AsyncGroup class
@@ -56,6 +56,15 @@ This is a Python application that interacts with Microsoft Graph API to access O
 - Defines paths for `.auth.json` and `.auth_record.json`
 - Provides root directory reference
 
+**`outlook/purge.py`** - Bulk email purge functionality
+- `purge_worker()` - Main function for batch email deletion
+- Runs in background thread with foreground user interaction
+- Uses single event loop per worker thread for efficient async operations
+- Progress reporting with `PROGRESS|counter|total|batch` format
+- Final summary with `RESULT|action|total|folder_id|before_date` format
+- Interactive cancellation via "QUIT" command
+- Supports dry-run mode for testing
+
 ### Features
 
 - Silent authentication with token caching and Windows Account Manager (WAM)
@@ -66,6 +75,7 @@ This is a Python application that interacts with Microsoft Graph API to access O
 - Read full message content including HTML/text body
 - Move messages between folders
 - Delete messages (soft delete to Deleted Items)
+- Bulk purge old emails with interactive cancellation
 - Async/await architecture throughout
 - Background data loading for improved performance
 - Pipe-delimited output format for AI/script integration
@@ -136,6 +146,13 @@ python -m outlook move <message_id1> <message_id2> <message_id3> <destination_fo
 # Delete message(s) (soft delete to Deleted Items)
 python -m outlook delete <message_id>
 python -m outlook delete <message_id1> <message_id2> <message_id3>  # Batch delete
+
+# Purge old emails (bulk deletion with interactive control)
+python -m outlook purge [folder_id] [--dry-run] [--batch-size N] [--before-date YYYY-MM-DD]
+python -m outlook purge inbox --dry-run --batch-size 50  # Test run, 50 emails per batch
+python -m outlook purge inbox --before-date 2023-01-01  # Delete emails before Jan 1, 2023
+python -m outlook purge --dry-run  # Test run on inbox with defaults (before 2024-01-01)
+# Type 'QUIT' (case-insensitive) and press Enter to stop gracefully
 ```
 
 ## Key Design Patterns
