@@ -156,6 +156,7 @@ class OutlookClient:
         orderby: tuple[str, ...] = DEFAULT_ORDERBY,
         select: tuple[str, ...] = DEFAULT_SELECT,
         top: int | None = None,
+        filter: str | None = None,
     ) -> tuple[list[Message], bool]:
         """Retrieve messages from a specific folder with filtering options.
 
@@ -169,6 +170,7 @@ class OutlookClient:
             select: Tuple of field names to include in results. Defaults to
                 common fields like id, subject, from, recipients, dates, etc.
             top: Maximum number of messages to return. None for default limit.
+            filter: OData filter expression for filtering messages (e.g., "receivedDateTime ge 2025-10-03T00:00:00Z").
 
         Returns:
             tuple[list[Message], bool]: A tuple containing:
@@ -179,7 +181,7 @@ class OutlookClient:
         messages: MessageCollectionResponse | None = await folder.messages.get(
             MessagesRequestBuilder.MessagesRequestBuilderGetRequestConfiguration(
                 query_parameters=MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
-                    orderby=list(orderby), select=list(select), top=top
+                    orderby=list(orderby), select=list(select), top=top, filter=filter
                 )
             )
         )

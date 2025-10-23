@@ -1,4 +1,6 @@
 import click
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from .groups import AsyncGroup
 from .utils import get_emails_str, get_from_str, sanitize_for_output
@@ -57,12 +59,35 @@ async def folders() -> None:
 @click.argument("folder_id", default="inbox")
 @click.option("--top", "-t", default=100, help="Number of messages to retrieve")
 @click.option("--oldest-first", is_flag=True, help="Sort messages oldest first instead of newest first")
-async def list(folder_id: str, top: int, oldest_first: bool) -> None:
+@click.option("--today", is_flag=True, help="Filter messages received today (America/Toronto timezone)")
+@click.option("--yesterday", is_flag=True, help="Filter messages received yesterday (America/Toronto timezone)")
+async def list(folder_id: str, top: int, oldest_first: bool, today: bool, yesterday: bool) -> None:
     """List messages in a folder"""
+
+    # Validate mutually exclusive flags
+    if today and yesterday:
+        raise click.UsageError("--today and --yesterday cannot be used together")
+
+    # Build date filter if needed
+    filter_expr: str | None = None
+    if today or yesterday:
+        toronto_tz = ZoneInfo("America/Toronto")
+        now_toronto = datetime.now(toronto_tz)
+        today_start = now_toronto.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        if today:
+            start_time = today_start
+            end_time = today_start + timedelta(days=1)
+        else:  # yesterday
+            start_time = today_start - timedelta(days=1)
+            end_time = today_start
+
+        # Format as ISO 8601 for OData
+        filter_expr = f"receivedDateTime ge {start_time.isoformat()} and receivedDateTime lt {end_time.isoformat()}"
 
     orderby = "ASC" if oldest_first else "DESC"
     manager = OutlookClient()
-    messages, more_available = await manager.get_messages(folder_id, top=top, orderby=(f"receivedDateTime {orderby}",))
+    messages, more_available = await manager.get_messages(folder_id, top=top, orderby=(f"receivedDateTime {orderby}",), filter=filter_expr)
     for message in messages:
         from_str: str = get_from_str(message.from_)
         to_str: str = get_emails_str(message.to_recipients)
